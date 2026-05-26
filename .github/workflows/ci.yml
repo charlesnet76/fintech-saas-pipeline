@@ -1,0 +1,33 @@
+﻿name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [develop]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Lint Go services
+        run: echo "Lint placeholder - replace with golangci-lint"
+
+      - name: Test Go services
+        run: echo "Test placeholder - replace with go test ./..."
+
+      - name: Lint dashboard
+        working-directory: dashboard
+        run: echo "npm run lint placeholder"

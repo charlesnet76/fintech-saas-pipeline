@@ -1,0 +1,12 @@
+﻿fintech_pipeline:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: localhost
+      user: postgres
+      password: postgres
+      port: 5432
+      dbname: fintech_dev
+      schema: public
+      threads: 4

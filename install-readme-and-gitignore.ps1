@@ -1,4 +1,12 @@
-﻿# FinTech SaaS Pipeline
+# install-readme-and-gitignore.ps1
+# Writes the polished README.md and expanded .gitignore directly into the current directory.
+# Run from C:\Users\carlo\fintech-saas-pipeline\
+
+Write-Host "Writing README.md and .gitignore..." -ForegroundColor Cyan
+
+# ============ README.md ============
+$readme = @'
+# FinTech SaaS Pipeline
 
 > Production-grade data and transaction pipeline for modern FinTech - Go microservices, dbt analytics, PostgreSQL, Kubernetes, and a React dashboard.
 
@@ -142,3 +150,149 @@ See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for branch strategy and PR wo
 ## License
 
 [MIT](LICENSE) - built by [@charlesnet76](https://github.com/charlesnet76).
+'@
+
+Set-Content -Path "README.md" -Value $readme -Encoding UTF8
+$readmeSize = (Get-Item "README.md").Length
+Write-Host "  [ok] README.md written ($readmeSize bytes)" -ForegroundColor Green
+
+# ============ .gitignore ============
+$gitignore = @'
+# ---------- Go ----------
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.html
+coverage.txt
+vendor/
+go.work
+go.work.sum
+
+# ---------- Node / React ----------
+node_modules/
+.pnp
+.pnp.js
+.pnp.cjs
+.pnpm-store/
+dashboard/dist/
+dashboard/build/
+dashboard/.vite/
+pids
+*.pid
+*.seed
+*.pid.lock
+coverage/
+*.lcov
+.nyc_output
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm
+.yarn-integrity
+
+# ---------- Python / dbt ----------
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+ENV/
+data-pipeline/dbt/target/
+data-pipeline/dbt/dbt_packages/
+data-pipeline/dbt/logs/
+data-pipeline/dbt/profiles.yml
+data-pipeline/airflow/logs/
+data-pipeline/airflow/airflow.cfg
+data-pipeline/airflow/airflow.db
+data-pipeline/airflow/webserver_config.py
+
+# ---------- Terraform ----------
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraform/
+.terraform.lock.hcl
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# ---------- Docker ----------
+docker-compose.override.yml
+
+# ---------- Kubernetes / Helm ----------
+*.kubeconfig
+charts/*.tgz
+
+# ---------- Environment & secrets ----------
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+*.pem
+*.key
+secrets/
+
+# ---------- IDE / editors ----------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# ---------- OS ----------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ---------- Logs ----------
+logs/
+*.log
+
+# ---------- Misc ----------
+tmp/
+temp/
+.cache/
+.history/
+'@
+
+Set-Content -Path ".gitignore" -Value $gitignore -Encoding UTF8
+$gitignoreSize = (Get-Item ".gitignore").Length
+Write-Host "  [ok] .gitignore written ($gitignoreSize bytes)" -ForegroundColor Green
+
+Write-Host ""
+Write-Host "Done! Verifying..." -ForegroundColor Cyan
+Write-Host ""
+Write-Host "--- README.md (first 3 lines) ---" -ForegroundColor Yellow
+Get-Content "README.md" -TotalCount 3
+Write-Host ""
+Write-Host "--- .gitignore (first 3 lines) ---" -ForegroundColor Yellow
+Get-Content ".gitignore" -TotalCount 3
+Write-Host ""
+Write-Host "Next: run 'git status' to see modified files." -ForegroundColor Yellow
