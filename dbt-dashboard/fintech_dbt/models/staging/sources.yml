@@ -1,0 +1,29 @@
+version: 2
+
+sources:
+  - name: fintech
+    database: fintech
+    schema: public
+    tables:
+      - name: transactions
+        description: "Financial transactions table (SaaS multi-tenant schema)"
+        columns:
+          - name: id
+            description: "Primary key (UUID)"
+            tests:
+              - unique
+              - not_null
+          - name: transaction_id
+            description: "Business-level transaction identifier"
+            tests:
+              - not_null
+          - name: customer_ref
+            tests:
+              - not_null
+          - name: amount
+            tests:
+              - not_null
+          - name: status
+            tests:
+              - accepted_values:
+                  values: ['completed', 'pending', 'failed']

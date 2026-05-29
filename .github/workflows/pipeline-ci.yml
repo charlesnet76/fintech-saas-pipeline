@@ -19,6 +19,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
 
       - name: Install dependencies
         run: pip install pandas psycopg2-binary
@@ -28,34 +29,48 @@ jobs:
 
       - name: Validate CSV output
         run: |
-          python - <<'PYEOF'
+          python - <<'EOF'
           import pandas as pd
           import sys
 
           df = pd.read_csv("data/transactions.csv")
 
+          # Row count check
           assert len(df) == 5000, f"Expected 5000 rows, got {len(df)}"
           print(f"✓ Row count: {len(df)}")
 
-          assert df.isnull().sum().sum() == 0, "Null values found"
+          # No nulls
+          assert df.isnull().sum().sum() == 0, "Null values found in dataset"
           print("✓ No null values")
 
-          assert df["transaction_id"].nunique() == len(df), "Duplicate transaction IDs"
+          # No duplicate transaction IDs
+          assert df["transaction_id"].nunique() == len(df), "Duplicate transaction IDs found"
           print("✓ No duplicate transaction IDs")
 
+          # All amounts positive
           assert (df["amount"] > 0).all(), "Negative or zero amounts found"
           print("✓ All amounts positive")
 
+          # Valid statuses only
           valid = {"completed", "pending", "failed"}
-          assert set(df["status"].unique()).issubset(valid), f"Invalid statuses"
+          assert set(df["status"].unique()).issubset(valid), f"Invalid statuses: {set(df['status'].unique()) - valid}"
           print(f"✓ Valid statuses: {df['status'].value_counts().to_dict()}")
 
+          # Valid categories
+          expected_cats = {
+            "food_and_drink","groceries","transport","entertainment",
+            "utilities","healthcare","shopping","travel","subscriptions","transfers"
+          }
+          assert set(df["category"].unique()).issubset(expected_cats), "Unknown categories found"
+          print(f"✓ All categories valid")
+
+          # Revenue sanity check
           revenue = df[df["status"]=="completed"]["amount"].sum()
           assert revenue > 1_000_000, f"Revenue too low: {revenue}"
           print(f"✓ Completed revenue: CAD ${revenue:,.2f}")
 
           print("\n✓ All data validation checks passed")
-          PYEOF
+          EOF
 
   # ── Job 2: Ingestion test ────────────────────────────────────────────────────
   test-ingestion:
@@ -85,6 +100,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
 
       - name: Install dependencies
         run: pip install pandas psycopg2-binary
@@ -130,8 +146,10 @@ jobs:
         run: python ingestion/ingest.py
 
       - name: Verify data landed in PostgreSQL
+        env:
+          PGPASSWORD: fintech_pass
         run: |
-          python - <<'PYEOF'
+          python - <<'EOF'
           import psycopg2
 
           conn = psycopg2.connect(
@@ -140,21 +158,25 @@ jobs:
           )
           cur = conn.cursor()
 
+          # Row count
           cur.execute("SELECT COUNT(*) FROM raw_transactions;")
           count = cur.fetchone()[0]
           assert count == 5000, f"Expected 5000 rows in DB, got {count}"
           print(f"✓ Rows in DB: {count}")
 
+          # Revenue check
           cur.execute("SELECT SUM(amount) FROM raw_transactions WHERE status = 'completed';")
           revenue = float(cur.fetchone()[0])
           assert revenue > 1_000_000, f"Revenue too low: {revenue}"
           print(f"✓ Revenue in DB: CAD ${revenue:,.2f}")
 
+          # Pipeline run logged
           cur.execute("SELECT status FROM pipeline_runs ORDER BY run_at DESC LIMIT 1;")
           run_status = cur.fetchone()[0]
           assert run_status == "success", f"Pipeline run status: {run_status}"
           print(f"✓ Pipeline run logged as: {run_status}")
 
+          # Category coverage
           cur.execute("SELECT COUNT(DISTINCT category) FROM raw_transactions;")
           cats = cur.fetchone()[0]
           assert cats == 10, f"Expected 10 categories, got {cats}"
@@ -162,4 +184,4 @@ jobs:
 
           print("\n✓ All DB verification checks passed")
           conn.close()
-          PYEOF
+          EOF

@@ -1,0 +1,27 @@
+{
+  "swarm": {
+    "defaultTopology": "hierarchical",
+    "maxAgents": 8,
+    "parallelism": true
+  },
+  "routing": {
+    "tier1Model": "claude-haiku-4-5",
+    "tier2Model": "claude-sonnet-4-6",
+    "tier3Model": "claude-opus-4-6",
+    "costOptimization": true
+  },
+  "memory": {
+    "persistent": true,
+    "vectorDB": "ruVector",
+    "sessionCarryover": true
+  },
+  "mcp": {
+    "enabled": true,
+    "tools": ["filesystem", "github", "docker", "postgres"]
+  },
+  "project": {
+    "name": "fintech-data-pipeline",
+    "repo": "https://github.com/charlesnet76/fintech-data-pipeline",
+    "stack": ["python", "dbt", "postgresql", "react", "go", "docker"]
+  }
+}
