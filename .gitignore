@@ -120,3 +120,22 @@ tmp/
 temp/
 .cache/
 .history/
+# === dbt build artifacts ===
+target/
+dbt_packages/
+logs/
+*.duckdb
+*.duckdb.wal
+.user.yml
+# === Python ===
+__pycache__/
+*.pyc
+.venv/
+venv/
+# === Node ===
+node_modules/
+# === OS / Editor ===
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

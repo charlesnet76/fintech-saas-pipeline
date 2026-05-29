@@ -1,0 +1,39 @@
+version: 2
+
+models:
+  - name: fct_revenue_by_category
+    description: "Completed revenue aggregated by spending category"
+    columns:
+      - name: category
+        tests:
+          - unique
+          - not_null
+      - name: total_revenue
+        tests:
+          - not_null
+
+  - name: fct_revenue_by_province
+    description: "Completed revenue aggregated by Canadian province"
+    columns:
+      - name: province
+        tests:
+          - unique
+          - not_null
+
+  - name: fct_monthly_revenue
+    description: "Month-over-month revenue trend"
+    columns:
+      - name: txn_month
+        tests:
+          - unique
+          - not_null
+
+  - name: fct_status_summary
+    description: "Transaction counts and amounts broken down by status"
+    columns:
+      - name: status
+        tests:
+          - unique
+          - not_null
+          - accepted_values:
+              values: ['completed', 'pending', 'failed']

@@ -1,0 +1,295 @@
+name: SaaS CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/charlesnet76/fintech-saas
+
+jobs:
+  # ── Job 1: Lint and vet Go code ───────────────────────────────────────────────
+  lint:
+    name: Lint Go services
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [auth, ai, gateway, pipeline, analytics]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Go vet — ${{ matrix.service }}
+        working-directory: saas/services/${{ matrix.service }}
+        run: |
+          if [ -f "main.go" ]; then
+            go vet ./...
+            echo "✓ go vet passed for ${{ matrix.service }}"
+          else
+            echo "⚠ No Go files yet in ${{ matrix.service }} — skipping"
+          fi
+
+  # ── Job 2: Test auth service ──────────────────────────────────────────────────
+  test-auth:
+    name: Test auth service
+    runs-on: ubuntu-latest
+    needs: lint
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: fintech
+          POSTGRES_USER: fintech_user
+          POSTGRES_PASSWORD: fintech_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Apply schema
+        env:
+          PGPASSWORD: fintech_pass
+        run: psql -h localhost -U fintech_user -d fintech -f saas/db/schema.sql
+
+      - name: Build auth service
+        working-directory: saas/services/auth
+        run: go build -o auth .
+
+      - name: Start auth service
+        working-directory: saas/services/auth
+        env:
+          DATABASE_URL: postgresql://fintech_user:fintech_pass@localhost:5432/fintech?sslmode=disable
+          JWT_ACCESS_SECRET: test-access-secret-32-chars-minimum
+          JWT_REFRESH_SECRET: test-refresh-secret-32-chars-minimum
+          PORT: "8081"
+        run: ./auth &
+
+      - name: Wait for auth service
+        run: sleep 3
+
+      - name: Test health endpoint
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8081/health)
+          [ "$STATUS" = "200" ] && echo "✓ Health check passed" || (echo "✗ Health check failed: $STATUS" && exit 1)
+
+      - name: Test register endpoint
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:8081/auth/register \
+            -H "Content-Type: application/json" \
+            -d '{"email":"test@ci.com","password":"password123","org_name":"CI Test Org"}')
+          echo "$RESPONSE" | grep -q "access_token" && echo "✓ Register passed" || (echo "✗ Register failed: $RESPONSE" && exit 1)
+
+      - name: Test login endpoint
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:8081/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"test@ci.com","password":"password123"}')
+          echo "$RESPONSE" | grep -q "access_token" && echo "✓ Login passed" || (echo "✗ Login failed: $RESPONSE" && exit 1)
+
+      - name: Test invalid credentials
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8081/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"test@ci.com","password":"wrongpassword"}')
+          [ "$STATUS" = "401" ] && echo "✓ Invalid credentials correctly rejected" || (echo "✗ Expected 401, got $STATUS" && exit 1)
+
+  # ── Job 3: Test AI service ────────────────────────────────────────────────────
+  test-ai:
+    name: Test AI service
+    runs-on: ubuntu-latest
+    needs: lint
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: fintech
+          POSTGRES_USER: fintech_user
+          POSTGRES_PASSWORD: fintech_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Apply schema
+        env:
+          PGPASSWORD: fintech_pass
+        run: psql -h localhost -U fintech_user -d fintech -f saas/db/schema.sql
+
+      - name: Build AI service
+        working-directory: saas/services/ai
+        run: go build -o ai-service .
+
+      - name: Start AI service
+        working-directory: saas/services/ai
+        env:
+          DATABASE_URL: postgresql://fintech_user:fintech_pass@localhost:5432/fintech?sslmode=disable
+          PORT: "8085"
+        run: ./ai-service &
+
+      - name: Wait for AI service
+        run: sleep 3
+
+      - name: Test health endpoint
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8085/health)
+          [ "$STATUS" = "200" ] && echo "✓ AI health check passed" || (echo "✗ AI health check failed: $STATUS" && exit 1)
+
+      - name: Test insights list (empty)
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "http://localhost:8085/insights?org_id=00000000-0000-0000-0000-000000000001")
+          [ "$STATUS" = "200" ] && echo "✓ Insights list passed" || (echo "✗ Insights list failed: $STATUS" && exit 1)
+
+  # ── Job 4: Data pipeline tests ────────────────────────────────────────────────
+  test-pipeline:
+    name: Test data pipeline
+    runs-on: ubuntu-latest
+    needs: lint
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: fintech
+          POSTGRES_USER: fintech_user
+          POSTGRES_PASSWORD: fintech_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pandas psycopg2-binary
+
+      - name: Generate mock data
+        run: python ingestion/generate_data.py
+
+      - name: Apply schema
+        env:
+          PGPASSWORD: fintech_pass
+        run: psql -h localhost -U fintech_user -d fintech -f saas/db/schema.sql
+
+      - name: Validate CSV
+        run: |
+          python - <<'EOF'
+          import pandas as pd
+          df = pd.read_csv("data/transactions.csv")
+          assert len(df) == 5000, f"Expected 5000 rows, got {len(df)}"
+          assert df.isnull().sum().sum() == 0, "Null values found"
+          assert df["transaction_id"].nunique() == len(df), "Duplicate IDs"
+          assert (df["amount"] > 0).all(), "Invalid amounts"
+          print(f"✓ CSV validation passed — {len(df)} rows")
+          EOF
+
+  # ── Job 5: Build and push Docker images ───────────────────────────────────────
+  build-images:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+    needs: [test-auth, test-ai, test-pipeline]
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        service: [auth, ai]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v5
+        with:
+          context: saas/services/${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+
+  # ── Job 6: Deploy to AKS (main branch only) ───────────────────────────────────
+  deploy:
+    name: Deploy to AKS
+    runs-on: ubuntu-latest
+    needs: build-images
+    if: github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group fintech-saas-rg \
+            --name fintech-saas-aks
+
+      - name: Update image tags
+        run: |
+          cd saas/k8s/base
+          kubectl set image deployment/auth-service \
+            auth-service=${{ env.IMAGE_PREFIX }}/auth:${{ github.sha }} \
+            -n fintech-saas
+          kubectl set image deployment/ai-service \
+            ai-service=${{ env.IMAGE_PREFIX }}/ai:${{ github.sha }} \
+            -n fintech-saas
+
+      - name: Verify rollout
+        run: |
+          kubectl rollout status deployment/auth-service -n fintech-saas --timeout=120s
+          kubectl rollout status deployment/ai-service -n fintech-saas --timeout=120s
+          echo "✓ Deployment complete"
