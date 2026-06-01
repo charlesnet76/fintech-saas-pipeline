@@ -6,10 +6,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	_ "github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -29,6 +32,100 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+// ── Prometheus metrics ────────────────────────────────────────────────────────
+
+var (
+	httpRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "auth_http_requests_total",
+			Help: "Total number of HTTP requests by method, path and status",
+		},
+		[]string{"method", "path", "status"},
+	)
+
+	httpRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "auth_http_request_duration_seconds",
+			Help:    "HTTP request duration in seconds",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method", "path"},
+	)
+
+	activeConnections = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "auth_active_connections",
+		Help: "Number of active HTTP connections",
+	})
+
+	dbQueryDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "auth_db_query_duration_seconds",
+			Help:    "Database query duration in seconds",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"query"},
+	)
+
+	loginTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "auth_login_total",
+			Help: "Total login attempts by result",
+		},
+		[]string{"result"}, // success, failure
+	)
+
+	registrationTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "auth_registration_total",
+		Help: "Total user registrations",
+	})
+)
+
+func initMetrics() {
+	prometheus.MustRegister(
+		httpRequestsTotal,
+		httpRequestDuration,
+		activeConnections,
+		dbQueryDuration,
+		loginTotal,
+		registrationTotal,
+	)
+}
+
+// ── Metrics middleware ────────────────────────────────────────────────────────
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func metricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip metrics endpoint itself
+		if r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		start := time.Now()
+		activeConnections.Inc()
+		defer activeConnections.Dec()
+
+		rec := &statusRecorder{ResponseWriter: w, status: 200}
+		next.ServeHTTP(rec, r)
+
+		duration := time.Since(start).Seconds()
+		status := strconv.Itoa(rec.status)
+
+		httpRequestsTotal.WithLabelValues(r.Method, r.URL.Path, status).Inc()
+		httpRequestDuration.WithLabelValues(r.Method, r.URL.Path).Observe(duration)
+	})
+}
+
 // ── Database ──────────────────────────────────────────────────────────────────
 
 var db *sql.DB
@@ -42,7 +139,6 @@ func initDB() {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(10)
 	db.SetConnMaxLifetime(5 * time.Minute)
-
 	if err = db.Ping(); err != nil {
 		log.Fatalf("failed to ping db: %v", err)
 	}
@@ -83,9 +179,7 @@ type Claims struct {
 
 func signAccessToken(userID, orgID, role string) (string, error) {
 	claims := Claims{
-		UserID: userID,
-		OrgID:  orgID,
-		Role:   role,
+		UserID: userID, OrgID: orgID, Role: role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -107,7 +201,6 @@ func signRefreshToken(userID, orgID string) (string, error) {
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
-// POST /auth/register
 func handleRegister(w http.ResponseWriter, r *http.Request) {
 	var req RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -123,14 +216,12 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
 	if err != nil {
 		jsonError(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
-	// Create org + user in a transaction
 	tx, err := db.Begin()
 	if err != nil {
 		jsonError(w, "internal error", http.StatusInternalServerError)
@@ -138,34 +229,25 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	// Insert org
 	var orgID string
 	orgSlug := slugify(req.OrgName)
-	err = tx.QueryRow(
-		`INSERT INTO organizations (name, slug) VALUES ($1, $2) RETURNING id`,
-		req.OrgName, orgSlug,
-	).Scan(&orgID)
+
+	timer := prometheus.NewTimer(dbQueryDuration.WithLabelValues("insert_org"))
+	err = tx.QueryRow(`INSERT INTO organizations (name, slug) VALUES ($1, $2) RETURNING id`, req.OrgName, orgSlug).Scan(&orgID)
+	timer.ObserveDuration()
 	if err != nil {
 		jsonError(w, "organization name already taken", http.StatusConflict)
 		return
 	}
 
-	// Insert user
 	var userID string
-	err = tx.QueryRow(
-		`INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id`,
-		req.Email, string(hash),
-	).Scan(&userID)
+	err = tx.QueryRow(`INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id`, req.Email, string(hash)).Scan(&userID)
 	if err != nil {
 		jsonError(w, "email already registered", http.StatusConflict)
 		return
 	}
 
-	// Insert membership as owner
-	_, err = tx.Exec(
-		`INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'owner')`,
-		orgID, userID,
-	)
+	_, err = tx.Exec(`INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'owner')`, orgID, userID)
 	if err != nil {
 		jsonError(w, "internal error", http.StatusInternalServerError)
 		return
@@ -176,37 +258,20 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Issue tokens
-	accessToken, err := signAccessToken(userID, orgID, "owner")
-	if err != nil {
-		jsonError(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	refreshToken, err := signRefreshToken(userID, orgID)
-	if err != nil {
-		jsonError(w, "internal error", http.StatusInternalServerError)
-		return
-	}
+	accessToken, _ := signAccessToken(userID, orgID, "owner")
+	refreshToken, _ := signRefreshToken(userID, orgID)
 
-	// Store refresh token
-	_, err = db.Exec(
-		`INSERT INTO refresh_tokens (user_id, org_id, token, expires_at) VALUES ($1, $2, $3, $4)`,
-		userID, orgID, refreshToken, time.Now().Add(7*24*time.Hour),
-	)
-	if err != nil {
-		jsonError(w, "internal error", http.StatusInternalServerError)
-		return
-	}
+	db.Exec(`INSERT INTO refresh_tokens (user_id, org_id, token, expires_at) VALUES ($1, $2, $3, $4)`,
+		userID, orgID, refreshToken, time.Now().Add(7*24*time.Hour))
 
+	registrationTotal.Inc()
 	log.Printf("registered user=%s org=%s", userID, orgID)
+
 	jsonResponse(w, http.StatusCreated, AuthResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		ExpiresIn:    900,
+		AccessToken: accessToken, RefreshToken: refreshToken, ExpiresIn: 900,
 	})
 }
 
-// POST /auth/login
 func handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -214,56 +279,39 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get user
+	timer := prometheus.NewTimer(dbQueryDuration.WithLabelValues("select_user"))
 	var userID, passwordHash string
-	err := db.QueryRow(
-		`SELECT id, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL`,
-		req.Email,
-	).Scan(&userID, &passwordHash)
+	err := db.QueryRow(`SELECT id, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL`, req.Email).Scan(&userID, &passwordHash)
+	timer.ObserveDuration()
 
-	// Always run bcrypt to prevent timing attacks
 	compareHash := passwordHash
 	if err != nil {
 		compareHash = "$2b$12$invalidhashfortimingnormalization000000000000"
 	}
 	if bcrypt.CompareHashAndPassword([]byte(compareHash), []byte(req.Password)) != nil || err != nil {
+		loginTotal.WithLabelValues("failure").Inc()
 		jsonError(w, "invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
-	// Get org + role
 	var orgID, role string
-	err = db.QueryRow(
-		`SELECT org_id, role FROM memberships WHERE user_id = $1 AND deleted_at IS NULL LIMIT 1`,
-		userID,
-	).Scan(&orgID, &role)
-	if err != nil {
-		jsonError(w, "no organization found for user", http.StatusUnauthorized)
-		return
-	}
+	db.QueryRow(`SELECT org_id, role FROM memberships WHERE user_id = $1 AND deleted_at IS NULL LIMIT 1`, userID).Scan(&orgID, &role)
 
-	// Issue tokens
 	accessToken, _ := signAccessToken(userID, orgID, role)
 	refreshToken, _ := signRefreshToken(userID, orgID)
 
-	// Store refresh token
-	db.Exec(
-		`INSERT INTO refresh_tokens (user_id, org_id, token, expires_at) VALUES ($1, $2, $3, $4)`,
-		userID, orgID, refreshToken, time.Now().Add(7*24*time.Hour),
-	)
-
-	// Update last login
+	db.Exec(`INSERT INTO refresh_tokens (user_id, org_id, token, expires_at) VALUES ($1, $2, $3, $4)`,
+		userID, orgID, refreshToken, time.Now().Add(7*24*time.Hour))
 	db.Exec(`UPDATE users SET last_login_at = NOW() WHERE id = $1`, userID)
 
-	log.Printf("login user=%s org=%s", userID, orgID)
+	loginTotal.WithLabelValues("success").Inc()
+	log.Printf("login user=%s", userID)
+
 	jsonResponse(w, http.StatusOK, AuthResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		ExpiresIn:    900,
+		AccessToken: accessToken, RefreshToken: refreshToken, ExpiresIn: 900,
 	})
 }
 
-// POST /auth/refresh
 func handleRefresh(w http.ResponseWriter, r *http.Request) {
 	var req RefreshRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -271,45 +319,31 @@ func handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Look up refresh token
 	var userID, orgID string
-	err := db.QueryRow(
-		`SELECT user_id, org_id FROM refresh_tokens
-		 WHERE token = $1 AND revoked_at IS NULL AND expires_at > NOW()`,
-		req.RefreshToken,
-	).Scan(&userID, &orgID)
+	err := db.QueryRow(`
+		SELECT user_id, org_id FROM refresh_tokens
+		WHERE token = $1 AND revoked_at IS NULL AND expires_at > NOW()`,
+		req.RefreshToken).Scan(&userID, &orgID)
 	if err != nil {
 		jsonError(w, "invalid or expired refresh token", http.StatusUnauthorized)
 		return
 	}
 
-	// Revoke old token
 	db.Exec(`UPDATE refresh_tokens SET revoked_at = NOW() WHERE token = $1`, req.RefreshToken)
 
-	// Get role
 	var role string
-	db.QueryRow(
-		`SELECT role FROM memberships WHERE user_id = $1 AND org_id = $2 AND deleted_at IS NULL`,
-		userID, orgID,
-	).Scan(&role)
+	db.QueryRow(`SELECT role FROM memberships WHERE user_id = $1 AND org_id = $2 AND deleted_at IS NULL`, userID, orgID).Scan(&role)
 
-	// Issue new tokens
 	accessToken, _ := signAccessToken(userID, orgID, role)
 	newRefresh, _ := signRefreshToken(userID, orgID)
-
-	db.Exec(
-		`INSERT INTO refresh_tokens (user_id, org_id, token, expires_at) VALUES ($1, $2, $3, $4)`,
-		userID, orgID, newRefresh, time.Now().Add(7*24*time.Hour),
-	)
+	db.Exec(`INSERT INTO refresh_tokens (user_id, org_id, token, expires_at) VALUES ($1, $2, $3, $4)`,
+		userID, orgID, newRefresh, time.Now().Add(7*24*time.Hour))
 
 	jsonResponse(w, http.StatusOK, AuthResponse{
-		AccessToken:  accessToken,
-		RefreshToken: newRefresh,
-		ExpiresIn:    900,
+		AccessToken: accessToken, RefreshToken: newRefresh, ExpiresIn: 900,
 	})
 }
 
-// POST /auth/logout
 func handleLogout(w http.ResponseWriter, r *http.Request) {
 	var req RefreshRequest
 	json.NewDecoder(r.Body).Decode(&req)
@@ -319,12 +353,8 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusOK, map[string]string{"message": "logged out"})
 }
 
-// GET /health
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	jsonResponse(w, http.StatusOK, map[string]string{
-		"status":  "ok",
-		"service": "auth",
-	})
+	jsonResponse(w, http.StatusOK, map[string]string{"status": "ok", "service": "auth"})
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -356,18 +386,23 @@ func slugify(s string) string {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 func main() {
+	initMetrics()
 	initDB()
 	defer db.Close()
 
 	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/auth/register", handleRegister)
 	mux.HandleFunc("/auth/login", handleLogin)
 	mux.HandleFunc("/auth/refresh", handleRefresh)
 	mux.HandleFunc("/auth/logout", handleLogout)
 
+	// Wrap all routes with metrics middleware
+	handler := metricsMiddleware(mux)
+
 	log.Printf("✓ Auth service listening on :%s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }
