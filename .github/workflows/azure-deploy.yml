@@ -1,0 +1,179 @@
+name: Build & Deploy to Azure
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  RESOURCE_GROUP: fintech-saas-rg
+  CONTAINER_APP_ENV: fintech-saas-env
+
+jobs:
+  build-auth:
+    name: Build auth service
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push auth
+        uses: docker/build-push-action@v5
+        with:
+          context: saas/services/auth
+          file: saas/services/auth/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/auth-service:latest
+            ${{ secrets.ACR_LOGIN_SERVER }}/auth-service:${{ github.sha }}
+
+  build-ai:
+    name: Build AI service
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push ai
+        uses: docker/build-push-action@v5
+        with:
+          context: saas/services/ai
+          file: saas/services/ai/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/ai-service:latest
+            ${{ secrets.ACR_LOGIN_SERVER }}/ai-service:${{ github.sha }}
+
+  build-pipeline:
+    name: Build pipeline service
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push pipeline
+        uses: docker/build-push-action@v5
+        with:
+          context: saas/services/pipeline
+          file: saas/services/pipeline/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/pipeline-service:latest
+            ${{ secrets.ACR_LOGIN_SERVER }}/pipeline-service:${{ github.sha }}
+
+  deploy:
+    name: Deploy to Azure Container Apps
+    runs-on: ubuntu-latest
+    needs: [build-auth, build-ai, build-pipeline]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Install Container Apps extension
+        run: az extension add --name containerapp --upgrade -y
+
+      - name: Create Container Apps environment
+        run: |
+          az containerapp env create \
+            --name ${{ env.CONTAINER_APP_ENV }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --location canadacentral \
+            2>/dev/null || echo "Environment already exists"
+
+      - name: Deploy auth-service
+        run: |
+          az containerapp create \
+            --name auth-service \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --environment ${{ env.CONTAINER_APP_ENV }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/auth-service:${{ github.sha }} \
+            --registry-server ${{ secrets.ACR_LOGIN_SERVER }} \
+            --registry-username ${{ secrets.ACR_USERNAME }} \
+            --registry-password ${{ secrets.ACR_PASSWORD }} \
+            --target-port 8081 \
+            --ingress external \
+            --min-replicas 0 \
+            --max-replicas 2 \
+            --cpu 0.25 \
+            --memory 0.5Gi \
+            2>/dev/null || \
+          az containerapp update \
+            --name auth-service \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/auth-service:${{ github.sha }}
+
+      - name: Deploy ai-service
+        run: |
+          az containerapp create \
+            --name ai-service \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --environment ${{ env.CONTAINER_APP_ENV }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/ai-service:${{ github.sha }} \
+            --registry-server ${{ secrets.ACR_LOGIN_SERVER }} \
+            --registry-username ${{ secrets.ACR_USERNAME }} \
+            --registry-password ${{ secrets.ACR_PASSWORD }} \
+            --target-port 8085 \
+            --ingress external \
+            --min-replicas 0 \
+            --max-replicas 2 \
+            --cpu 0.25 \
+            --memory 0.5Gi \
+            2>/dev/null || \
+          az containerapp update \
+            --name ai-service \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/ai-service:${{ github.sha }}
+
+      - name: Deploy pipeline-service
+        run: |
+          az containerapp create \
+            --name pipeline-service \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --environment ${{ env.CONTAINER_APP_ENV }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/pipeline-service:${{ github.sha }} \
+            --registry-server ${{ secrets.ACR_LOGIN_SERVER }} \
+            --registry-username ${{ secrets.ACR_USERNAME }} \
+            --registry-password ${{ secrets.ACR_PASSWORD }} \
+            --target-port 8086 \
+            --ingress external \
+            --min-replicas 0 \
+            --max-replicas 2 \
+            --cpu 0.5 \
+            --memory 1.0Gi \
+            2>/dev/null || \
+          az containerapp update \
+            --name pipeline-service \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/pipeline-service:${{ github.sha }}
+
+      - name: Print live URLs
+        run: |
+          echo "=== Live Azure URLs ==="
+          echo "Auth:"
+          az containerapp show --name auth-service --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv
+          echo "AI:"
+          az containerapp show --name ai-service --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv
+          echo "Pipeline:"
+          az containerapp show --name pipeline-service --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv
