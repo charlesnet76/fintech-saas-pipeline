@@ -1,0 +1,66 @@
+# ── Add this job to your existing .github/workflows/pipeline.yml ──────────────
+# It follows the exact same pattern as your auth and ai service jobs.
+# Place it after your existing build jobs.
+
+  build-features:
+    name: Build & Push Features Service
+    runs-on: ubuntu-latest
+    needs: [lint, test]           # adjust to match your existing job names
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Run tests
+        working-directory: saas/services/features
+        run: go test ./... -v
+
+      - name: Build binary
+        working-directory: saas/services/features
+        run: CGO_ENABLED=0 GOOS=linux go build -o features .
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: saas/services/features
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ghcr.io/charlesnet76/fintech-saas/features:latest
+
+  deploy-features:
+    name: Deploy Features Service to K8s
+    runs-on: ubuntu-latest
+    needs: [build-features]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: ${{ secrets.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Apply K8s manifests
+        run: |
+          kubectl apply -f saas/services/features/k8s/features-deployment.yaml
+
+      - name: Rollout status
+        run: |
+          kubectl rollout status deployment/features-service --timeout=120s

@@ -1,0 +1,75 @@
+# ── Deployment ────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: features-service
+  labels:
+    app: features-service
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: features-service
+  template:
+    metadata:
+      labels:
+        app: features-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8082"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: features
+          image: ghcr.io/charlesnet76/fintech-saas/features:latest
+          ports:
+            - containerPort: 8082
+          env:
+            - name: PORT
+              value: "8082"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: fintech-secrets
+                  key: database-url
+            - name: JWT_ACCESS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: fintech-secrets
+                  key: jwt-access-secret
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "250m"
+---
+# ── Service ───────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: features-service
+  labels:
+    app: features-service
+spec:
+  selector:
+    app: features-service
+  ports:
+    - protocol: TCP
+      port: 8082
+      targetPort: 8082
+  type: ClusterIP
