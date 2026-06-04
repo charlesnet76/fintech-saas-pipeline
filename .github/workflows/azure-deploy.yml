@@ -58,7 +58,7 @@ jobs:
       - uses: docker/login-action@v3
         with:
           registry: ${{ secrets.ACR_LOGIN_SERVER }}
-          username: ${{ secrets.ACR_USERNAME }}
+          username: ${{ secrets.ACR_LOGIN_SERVER }}
           password: ${{ secrets.ACR_PASSWORD }}
       - uses: docker/build-push-action@v5
         with:
@@ -124,85 +124,73 @@ jobs:
           az containerapp env create \
             --name ${{ env.CONTAINER_APP_ENV }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --location canadacentral 2>/dev/null || echo "exists"
+            --location canadacentral 2>/dev/null || echo "Environment already exists"
       - name: Deploy auth-service
         run: |
-          az containerapp create --name auth-service \
+          az containerapp up \
+            --name auth-service \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --environment ${{ env.CONTAINER_APP_ENV }} \
             --image ${{ secrets.ACR_LOGIN_SERVER }}/auth-service:${{ github.sha }} \
             --registry-server ${{ secrets.ACR_LOGIN_SERVER }} \
             --registry-username ${{ secrets.ACR_USERNAME }} \
             --registry-password ${{ secrets.ACR_PASSWORD }} \
-            --target-port 8081 --ingress external \
-            --min-replicas 0 --max-replicas 2 \
-            --cpu 0.25 --memory 0.5Gi 2>/dev/null || \
-          az containerapp update --name auth-service \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/auth-service:${{ github.sha }}
+            --target-port 8081 \
+            --ingress external
       - name: Deploy ai-service
         run: |
-          az containerapp create --name ai-service \
+          az containerapp up \
+            --name ai-service \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --environment ${{ env.CONTAINER_APP_ENV }} \
             --image ${{ secrets.ACR_LOGIN_SERVER }}/ai-service:${{ github.sha }} \
             --registry-server ${{ secrets.ACR_LOGIN_SERVER }} \
             --registry-username ${{ secrets.ACR_USERNAME }} \
             --registry-password ${{ secrets.ACR_PASSWORD }} \
-            --target-port 8085 --ingress external \
-            --min-replicas 0 --max-replicas 2 \
-            --cpu 0.25 --memory 0.5Gi 2>/dev/null || \
-          az containerapp update --name ai-service \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/ai-service:${{ github.sha }}
+            --target-port 8085 \
+            --ingress external
       - name: Deploy pipeline-service
         run: |
-          az containerapp create --name pipeline-service \
+          az containerapp up \
+            --name pipeline-service \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --environment ${{ env.CONTAINER_APP_ENV }} \
             --image ${{ secrets.ACR_LOGIN_SERVER }}/pipeline-service:${{ github.sha }} \
             --registry-server ${{ secrets.ACR_LOGIN_SERVER }} \
             --registry-username ${{ secrets.ACR_USERNAME }} \
             --registry-password ${{ secrets.ACR_PASSWORD }} \
-            --target-port 8086 --ingress external \
-            --min-replicas 0 --max-replicas 2 \
-            --cpu 0.5 --memory 1.0Gi 2>/dev/null || \
-          az containerapp update --name pipeline-service \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/pipeline-service:${{ github.sha }}
+            --target-port 8086 \
+            --ingress external
       - name: Deploy features-service
         run: |
-          az containerapp create --name features-service \
+          az containerapp up \
+            --name features-service \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --environment ${{ env.CONTAINER_APP_ENV }} \
             --image ${{ secrets.ACR_LOGIN_SERVER }}/features-service:${{ github.sha }} \
             --registry-server ${{ secrets.ACR_LOGIN_SERVER }} \
             --registry-username ${{ secrets.ACR_USERNAME }} \
             --registry-password ${{ secrets.ACR_PASSWORD }} \
-            --target-port 8087 --ingress external \
-            --min-replicas 0 --max-replicas 2 \
-            --cpu 0.25 --memory 0.5Gi 2>/dev/null || \
-          az containerapp update --name features-service \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/features-service:${{ github.sha }}
+            --target-port 8087 \
+            --ingress external
       - name: Deploy monitor-service
         run: |
-          az containerapp create --name monitor-service \
+          az containerapp up \
+            --name monitor-service \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --environment ${{ env.CONTAINER_APP_ENV }} \
             --image ${{ secrets.ACR_LOGIN_SERVER }}/monitor-service:${{ github.sha }} \
             --registry-server ${{ secrets.ACR_LOGIN_SERVER }} \
             --registry-username ${{ secrets.ACR_USERNAME }} \
             --registry-password ${{ secrets.ACR_PASSWORD }} \
-            --target-port 8088 --ingress external \
-            --min-replicas 0 --max-replicas 1 \
-            --cpu 0.25 --memory 0.5Gi 2>/dev/null || \
-          az containerapp update --name monitor-service \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/monitor-service:${{ github.sha }}
+            --target-port 8088 \
+            --ingress external
       - name: Print live URLs
         run: |
           echo "=== Live Azure URLs ==="
           for svc in auth-service ai-service pipeline-service features-service monitor-service; do
-            echo "$svc: $(az containerapp show --name $svc --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)"
+            url=$(az containerapp show --name $svc \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null)
+            echo "$svc: https://$url"
           done
