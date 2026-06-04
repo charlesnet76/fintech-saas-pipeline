@@ -25,7 +25,7 @@ jobs:
         run: pip install pandas psycopg2-binary
 
       - name: Generate mock data
-        run: python ingestion/generate_data.py
+        run: python data-pipeline/ingestion/generate_data.py
 
       - name: Validate CSV output
         run: |
@@ -106,7 +106,7 @@ jobs:
         run: pip install pandas psycopg2-binary
 
       - name: Generate mock data
-        run: python ingestion/generate_data.py
+        run: python data-pipeline/ingestion/generate_data.py
 
       - name: Create schema
         env:
