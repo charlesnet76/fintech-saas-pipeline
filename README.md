@@ -54,6 +54,11 @@ Production-grade FinTech data platform demonstrating end-to-end engineering — 
 
 ---
 
+
+## Dashboard Preview
+
+![FinTech Analytics Dashboard](docs/dashboard.png)
+
 ## Live Services
 
 | Service | URL | Health |
