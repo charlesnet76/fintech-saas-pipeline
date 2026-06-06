@@ -44,7 +44,7 @@ func initDB() {
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
 	if err = db.Ping(); err != nil {
-		log.Fatalf("failed to ping db: %v", err)
+		log.Printf("WARNING: failed to ping db: %v (continuing without DB)", err); return
 	}
 	log.Println("✓ Connected to PostgreSQL")
 }
