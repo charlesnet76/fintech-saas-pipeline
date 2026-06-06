@@ -1,31 +1,37 @@
-# LinkedIn Announcement Post
+Excited to share what I've shipped to production this week. 🚀
 
----
+**5 microservices — live on Azure Container Apps 🇨🇦**
 
-Excited to share two projects I've shipped to production this week.
+Built and deployed an end-to-end FinTech data platform from scratch:
 
-**SaaS API — Live on Railway**
-Built a production-ready REST API from scratch: Node.js backend, automated CI/CD with GitHub Actions, deployed and running on Railway.
+🔐 Auth service — JWT + refresh token rotation + RBAC
+🤖 AI service — financial insights via Claude API
+📊 Pipeline service — CSV ingestion → PostgreSQL
+🧠 Features service — ML feature store with point-in-time retrieval
+📡 Monitor service — freshness monitoring + SLA alerts
 
-Live health endpoint: https://saas-api-starter-production.up.railway.app/health
+All 5 running live in Canada Central:
+→ https://auth-service.gentlebay-f6693cbb.canadacentral.azurecontainerapps.io/health
+→ https://pipeline-service.gentlebay-f6693cbb.canadacentral.azurecontainerapps.io/health
 
-**FinTech Data Pipeline — End to End**
-Designed and deployed an end-to-end financial data pipeline — ingestion, PostgreSQL storage, dbt transformations, and a microservices layer for auth, analytics, and AI features.
+**Also live: SaaS API on Railway**
+Production REST API — versioned routes, JWT auth, RBAC, rate limiting.
+→ https://saas-api-starter-production.up.railway.app/health
 
-Both projects are built with a DevOps-first mindset: Docker containers, GitHub Actions pipelines, and infrastructure-as-code.
+**What's under the hood:**
+→ Go microservices with Prometheus metrics
+→ PostgreSQL + dbt (16/16 tests passing)
+→ Python ETL — 5,000 row Canadian FinTech dataset
+→ GitHub Actions CI/CD → Azure Container Registry → Container Apps
+→ Kubernetes + Grafana observability stack locally
 
-Portfolio and full write-ups: https://charlesnet76.github.io
+This isn't tutorials. These are real systems running in production.
 
----
+Portfolio: https://charlesnet76.github.io
+GitHub: https://github.com/charlesnet76
 
-This is what months of building in public looks like. Not just tutorials — actual systems running in production.
+NPower Canada alumni 🎓 · AZ-900 certified ☁️ · Open to full-time dev roles in Canada 🇨🇦
 
-Stack: Node.js · PostgreSQL · Python · Go · Docker · GitHub Actions · Azure
+Stack: Go · Node.js · Python · PostgreSQL · dbt · Docker · Kubernetes · Azure · GitHub Actions · Terraform · Prometheus · Grafana
 
-If you're building something in FinTech or SaaS and want to compare notes, drop a comment or connect. Always happy to talk shop.
-
-#FinTech #SaaS #BackendDevelopment #DevOps #PostgreSQL #NodeJS #DataEngineering #OpenToWork #BuildInPublic
-
----
-
-*[Optional: add a screenshot of the /health endpoint response or a pipeline architecture diagram]*
+#FinTech #SaaS #BackendDevelopment #DevOps #Azure #DataEngineering #OpenToWork #BuildInPublic #NPowerCanada #Victoria #Canada
