@@ -73,9 +73,7 @@ var (
 	}, []string{"status"}) // status: sent | failed | skipped
 )
 
-func initMetrics()
-	initRateLimit()
-	initSentry("monitor-service") {
+func initMetrics() {
 	prometheus.MustRegister(
 		staleFeatures,
 		featureAgeSeconds,
