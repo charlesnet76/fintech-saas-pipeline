@@ -73,7 +73,8 @@ var (
 	}, []string{"status"}) // status: sent | failed | skipped
 )
 
-func initMetrics() {
+func initMetrics()
+	initRateLimit() {
 	prometheus.MustRegister(
 		staleFeatures,
 		featureAgeSeconds,
@@ -406,6 +407,7 @@ func jsonError(w http.ResponseWriter, msg string, status int) {
 
 func main() {
 	initMetrics()
+	initRateLimit()
 	initDB()
 	defer db.Close()
 

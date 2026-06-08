@@ -80,7 +80,8 @@ var (
 	})
 )
 
-func initMetrics() {
+func initMetrics()
+	initRateLimit() {
 	prometheus.MustRegister(
 		httpRequestsTotal,
 		httpRequestDuration,
@@ -387,6 +388,7 @@ func slugify(s string) string {
 
 func main() {
 	initMetrics()
+	initRateLimit()
 	initDB()
 	defer db.Close()
 

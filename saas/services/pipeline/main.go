@@ -61,7 +61,8 @@ var (
 	)
 )
 
-func initMetrics() {
+func initMetrics()
+	initRateLimit() {
 	prometheus.MustRegister(uploadsTotal, rowsIngested, uploadDuration)
 }
 
@@ -405,6 +406,7 @@ func jsonError(w http.ResponseWriter, msg string, status int) {
 
 func main() {
 	initMetrics()
+	initRateLimit()
 	initDB()
 	defer db.Close()
 
