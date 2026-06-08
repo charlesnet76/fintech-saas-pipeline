@@ -74,7 +74,8 @@ var (
 )
 
 func initMetrics()
-	initRateLimit() {
+	initRateLimit()
+	initSentry("monitor-service") {
 	prometheus.MustRegister(
 		staleFeatures,
 		featureAgeSeconds,
@@ -408,6 +409,7 @@ func jsonError(w http.ResponseWriter, msg string, status int) {
 func main() {
 	initMetrics()
 	initRateLimit()
+	initSentry("monitor-service")
 	initDB()
 	defer db.Close()
 
