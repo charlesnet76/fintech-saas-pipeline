@@ -1,6 +1,6 @@
 module github.com/charlesnet76/fintech-saas/monitor
 
-go 1.26.3
+go 1.22
 
 require (
 	github.com/getsentry/sentry-go v0.31.1
