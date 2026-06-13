@@ -407,8 +407,6 @@ func main() {
 	initMetrics()
 	initRateLimit()
 	initSentry("pipeline-service")
-	initRateLimit()
-	initSentry("pipeline-service")
 	initDB()
 	defer db.Close()
 

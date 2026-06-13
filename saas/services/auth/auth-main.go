@@ -389,8 +389,6 @@ func main() {
 	initMetrics()
 	initRateLimit()
 	initSentry("auth-service")
-	initRateLimit()
-	initSentry("auth-service")
 	initDB()
 	defer db.Close()
 
