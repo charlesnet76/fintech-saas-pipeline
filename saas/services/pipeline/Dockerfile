@@ -2,7 +2,7 @@
 FROM golang:1.22-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go mod download -x 2>&1 || (go mod download -x && exit 1)
 COPY *.go ./
 RUN CGO_ENABLED=0 GOOS=linux go build -o pipeline .
 
