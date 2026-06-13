@@ -1,6 +1,6 @@
 module github.com/charlesnet76/fintech-saas/pipeline
 
-go 1.26.3
+go 1.23.0
 
 require (
 	github.com/getsentry/sentry-go v0.31.1
