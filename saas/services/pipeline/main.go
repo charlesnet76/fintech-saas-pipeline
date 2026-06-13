@@ -414,6 +414,7 @@ func main() {
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/upload/csv", handleUpload)
+	mux.HandleFunc("/quality/report", handleQualityReport)
 	mux.HandleFunc("/upload/status", handleStatus)
 
 	log.Printf("✓ Pipeline service listening on :%s", port)
