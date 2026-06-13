@@ -1,4 +1,4 @@
-# cache-bust: v3
+# cache-bust: v4
 FROM golang:1.22-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
