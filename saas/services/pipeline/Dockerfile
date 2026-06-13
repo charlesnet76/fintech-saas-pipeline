@@ -3,7 +3,7 @@ FROM golang:1.26-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
-COPY main.go ./
+COPY *.go ./
 RUN CGO_ENABLED=0 GOOS=linux go build -o pipeline .
 
 FROM alpine:3.19
