@@ -11,6 +11,7 @@ RUN apk --no-cache add ca-certificates python3
 WORKDIR /app
 COPY --from=builder /app/pipeline .
 COPY validator.py .
+COPY predict.py .
 USER nobody
 EXPOSE 8086
 CMD ["./pipeline"]

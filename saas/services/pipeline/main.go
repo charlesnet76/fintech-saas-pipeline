@@ -415,6 +415,11 @@ func main() {
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/upload/csv", handleUpload)
 	mux.HandleFunc("/quality/report", handleQualityReport)
+	mux.HandleFunc("/predict/all", handlePredictAll)
+	mux.HandleFunc("/predict/forecast", handlePredictForecast)
+	mux.HandleFunc("/predict/churn", handlePredictChurn)
+	mux.HandleFunc("/predict/segments", handlePredictSegments)
+	mux.HandleFunc("/predict/fraud", handlePredictFraud)
 	mux.HandleFunc("/upload/status", handleStatus)
 
 	log.Printf("✓ Pipeline service listening on :%s", port)
