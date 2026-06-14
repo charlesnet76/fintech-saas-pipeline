@@ -12,6 +12,7 @@ WORKDIR /app
 COPY --from=builder /app/pipeline .
 COPY validator.py .
 COPY predict.py .
+COPY rag_engine.py .
 USER nobody
 EXPOSE 8086
 CMD ["./pipeline"]

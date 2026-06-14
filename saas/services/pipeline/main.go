@@ -420,6 +420,9 @@ func main() {
 	mux.HandleFunc("/predict/churn", handlePredictChurn)
 	mux.HandleFunc("/predict/segments", handlePredictSegments)
 	mux.HandleFunc("/predict/fraud", handlePredictFraud)
+	mux.HandleFunc("/insights/ask", handleInsightsAsk)
+	mux.HandleFunc("/insights/report", handleInsightsReport)
+	mux.HandleFunc("/insights/context", handleInsightsContext)
 	mux.HandleFunc("/upload/status", handleStatus)
 
 	log.Printf("✓ Pipeline service listening on :%s", port)
