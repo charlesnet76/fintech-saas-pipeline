@@ -441,7 +441,7 @@ func main() {
 	mux.HandleFunc("/upload/status", handleStatus)
 
 	log.Printf("✓ Pipeline service listening on :%s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	if err := http.ListenAndServe(":"+port, corsMiddleware(mux)); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }
