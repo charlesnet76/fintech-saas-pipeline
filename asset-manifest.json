@@ -1,0 +1,10 @@
+{
+  "files": {
+    "main.js": "/fintech-dashboard/static/js/main.0d43846e.js",
+    "index.html": "/fintech-dashboard/index.html",
+    "main.0d43846e.js.map": "/fintech-dashboard/static/js/main.0d43846e.js.map"
+  },
+  "entrypoints": [
+    "static/js/main.0d43846e.js"
+  ]
+}
