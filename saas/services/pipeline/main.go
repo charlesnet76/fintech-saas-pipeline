@@ -421,6 +421,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 func main() {
 	initMetrics()
 	initRateLimit()
+	initCache()
 	initSentry("pipeline-service")
 	initDB()
 	defer db.Close()
@@ -438,6 +439,7 @@ func main() {
 	mux.HandleFunc("/insights/ask", handleInsightsAsk)
 	mux.HandleFunc("/insights/report", handleInsightsReport)
 	mux.HandleFunc("/insights/context", handleInsightsContext)
+	mux.HandleFunc("/cache/stats", handleCacheStats)
 	mux.HandleFunc("/upload/status", handleStatus)
 
 	log.Printf("✓ Pipeline service listening on :%s", port)

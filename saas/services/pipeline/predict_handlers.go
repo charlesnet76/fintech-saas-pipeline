@@ -75,6 +75,14 @@ func handlePredictForecast(w http.ResponseWriter, r *http.Request) {
 	orgID := r.URL.Query().Get("org_id")
 	if orgID == "" { orgID = "demo" }
 
+	// Check cache first
+	key := cacheKey("predict:forecast", orgID)
+	if cached := cacheGet(key); cached != nil {
+		cached["cached"] = true
+		jsonResponse(w, http.StatusOK, cached)
+		return
+	}
+
 	monthly, err := getMonthlyRevenue(orgID)
 	if err != nil || len(monthly) == 0 {
 		monthly = getDemoMonthly()
@@ -85,13 +93,22 @@ func handlePredictForecast(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, http.StatusOK, map[string]interface{}{"ok": false, "error": err.Error()})
 		return
 	}
-	jsonResponse(w, http.StatusOK, map[string]interface{}{"ok": true, "org_id": orgID, "forecast": result["forecast"]})
+	response := map[string]interface{}{"ok": true, "org_id": orgID, "forecast": result["forecast"]}
+	cacheSet(key, response, cacheTTLForecast)
+	jsonResponse(w, http.StatusOK, response)
 }
 
 // GET /predict/churn
 func handlePredictChurn(w http.ResponseWriter, r *http.Request) {
 	orgID := r.URL.Query().Get("org_id")
 	if orgID == "" { orgID = "demo" }
+
+	key := cacheKey("predict:churn", orgID)
+	if cached := cacheGet(key); cached != nil {
+		cached["cached"] = true
+		jsonResponse(w, http.StatusOK, cached)
+		return
+	}
 
 	customers, err := getCustomerStats(orgID)
 	if err != nil || len(customers) == 0 {
@@ -103,7 +120,9 @@ func handlePredictChurn(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, http.StatusOK, map[string]interface{}{"ok": false, "error": err.Error()})
 		return
 	}
-	jsonResponse(w, http.StatusOK, map[string]interface{}{"ok": true, "org_id": orgID, "churn": result["churn"]})
+	response := map[string]interface{}{"ok": true, "org_id": orgID, "churn": result["churn"]}
+	cacheSet(key, response, cacheTTLChurn)
+	jsonResponse(w, http.StatusOK, response)
 }
 
 // GET /predict/segments
@@ -147,7 +166,9 @@ func handlePredictFraud(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, http.StatusOK, map[string]interface{}{"ok": false, "error": err.Error()})
 		return
 	}
-	jsonResponse(w, http.StatusOK, map[string]interface{}{"ok": true, "org_id": orgID, "fraud": result["fraud"]})
+	response := map[string]interface{}{"ok": true, "org_id": orgID, "fraud": result["fraud"]}
+	cacheSet(cacheKey("predict:fraud", orgID), response, cacheTTLFraud)
+	jsonResponse(w, http.StatusOK, response)
 }
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
